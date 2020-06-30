@@ -1,0 +1,14 @@
+Double free vulnerability to make malloc return the same pointer 3 times.
+
+Freeing small 3 times did not work so I came up with a different plan.
+
+First alloc small, then free it.
+
+Now alloc medium with the same size.
+This medium chunk will use the freed one, which is still referenced by small.
+
+We now have a chunk that is pointed to from small and medium.
+
+Do the same for large.
+
+Print flag.

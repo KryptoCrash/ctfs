@@ -1,0 +1,9 @@
+To find a libc address with PIE disabled, simply overwrite RIP with puts_plt and then put the callback function address and the puts got address after.
+
+Check /2020/247ctf/pwn/non_exec_stack for more details.
+
+If you are on 64 bit arch, use a pop_rdi gadget to pop puts got into rdi and return to puts plt, put your callback function AFTER puts plt.
+
+
+16 byte alignment!
+Make sure you place some ret gadgets before your other gadgets to align the stack by 16 bytes.

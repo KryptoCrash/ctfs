@@ -1,0 +1,161 @@
+<TO BE POILISHED LATER>
+
+
+WRITING OVER THE TCACHE (VERY POWERFUL): UAF
+The vulnerability is a use-after-free. After double-freeing, you can read the chunk data to leak a heap address. 
+From this heap leak, you can compute the address of tcache and overwrite the forward pointer of the chunk so that you allocate a pointer pointing to the top of tcache. (This is my favorite trick, to date.)
+Once you have control over tcache, it's basically game over.
+Overwrite the tcache list size to 0x7 so that the next freed chunk is put on the smallbin; use this to leak a libc address.
+Then overwrite tcache again to place __free_hook all over the tcache.
+Next allocate a tcache chunk(which will actually be pointing to free_hook) and overwrite it with system.
+Then allocate another chunk with "/bin/sh\0" and free it to get a shell.
+
+
+DOUBLE FREE DETECTION BYPASS:
+Freeing a different chunk in the middle of a double free will bypaass double free detection. 
+
+LEAKING LIBC:
+Bins (not tcache/fast) tend to have a libc address on them (for arena stuff).
+By mallocing these chunks and reading them, you can leak libc addresses.
+
+
+UNSORTED BIN ATTACK: overwrite the bk pointer of a freed unsorted chunk
+This attack can be used to modify the global_max_fast in the heap to make the larger chunks look like fast bins, so we can perform some fast bin attacks.
+Let's allocate two chunks (to prevent consolidation).
+Free the first one and it will now be added to the unsorted bin.
+Now, use some other vulnerability to overwrite the bk pointer of this freed chunk.
+We will overwrite it to point to a fake chunk.
+Now we will malloc a chunk of the same size of the freed chunk.
+Through some magic that happens due to the way the unsorted bin works, the bk pointer of this fake chunk is now pointing to the freed chunk.
+Since this freed chunk has a large address, we can use this to write to anywhere with a very large value.
+For example, we can replace this fake chunk with global_max_fast to make large malloc requests only use the fastbin.
+
+
+
+FASTBIN/TCACHE DUP INTO STACK (double free attack): Double free of a chunk in the fastbin or tcache
+THIS EXPLOIT CAN ALSO BE DONE WITH TCACHE INSTEAD OF FASTBIN.
+
+Exploit double free to get access to write address into stack.
+Allocate 3 chunks of size 8.
+Free the first, the second, and then the first again.
+
+The fastbin list will now look like:
+
+chunk_a -> chunk_b -> chunk_a -> 0x0
+
+Pop chunk_a off of the fastbin list by allocating a chunk of 8.
+
+chunk_a is now a writable freed chunk.
+We can abuse this by overwriting the chunk_a ptr returned from malloc to point into a fake chunk in the stack with size 0x20
+Now, after we malloc twice, the second malloc will return a pointer into the stack.
+
+
+OVERWRITE FREE HOOK: pointer to free hook
+Overwriting the free hook with system will make it so freeing a chunk with /bin/sh\0 as its data will spawn a shell.
+
+
+TCACHE POISONING (or really anything): UAF (pointer to chunk still referenced after being freed)
+THIS CAN BE DONE BY ONLY USING ONE CHUNK, however:
+After the patch https://sourceware.org/git/?p=glibc.git;a=commit;h=77dc0d8643aa99c92bf671352b0a8adde705896f,
+We have to create and free one more chunk for padding before fd pointer hijacking.
+
+This is one of the coolest and simplest tricks in heap exploitation.
+Lets start by mallocing and freeing 2 chunks.
+They should now be placed in a bin list like this:
+chunk_ptr_2 -> chunk_ptr_1 -> 0x0
+Seems fine, right?
+
+Our chunk_2 data should be looking kind of like this:
+0x00000000 0x00000050
+0x555f0fe9 0x00000000  <- fd and bk pointers
+0x41414141 0x41414141  <- data was not zeroed out
+
+Our chunk_1 data should be looking kind of like this:
+0x00000000 0x00000050
+0x00000000 0x555f0f99  <- fd and bk pointers
+0x41414141 0x41414141  <- data was not zeroed out
+
+Well, what happens if this program still stores the pointer to these chunks after freeing them (UAF).
+Well, this gives us access to overwriting the fd and bk pointers, as they are still referenced.
+Let's overwrite the fd pointer of chunk_ptr_2 with the libc address for MALLOC_HOOK.
+
+Our chunk_2 data should be looking kind of like this:
+0x00000000 0x00000050
+0x7f79a7fe 0x00000000  <- fd(pointing to MALLOC_HOOK) and bk pointers
+0x41414141 0x41414141  <- data was not zeroed out
+
+Our bin list will now look like this:
+chunk_ptr_2 -> MALLOC_HOOK -> 0x0
+
+Uh Oh! The POINTER for MALLOC_HOOK is now on the bin list, when we allocate 2 new chunks, the second will give a pointer into the CODE for MALLOC_HOOK rather than a heap chunk.
+Let's try mallocing twice!
+
+Our bin list after the first malloc:
+MALLOC_HOOK -> 0x0
+
+Our bin list after the second malloc:
+0x0
+
+We now have a pointer into the CODE for MALLOC_HOOK and can edit it (the same as editing data in a heap chunk).
+If we edit this "chunk", which is really assembly instructions for MALLOC_HOOK, we can make MALLOC_HOOK instead run a ROP gadget that pops a shell.
+
+Voila, we now have access to a shell all from a simple mistake in forgetting to dereference chunk pointers!
+
+
+
+TCACHE NOTES:
+The tcache is a bin list holding up to 7 chunks.
+Once it is filled up, freed chunks will continue to be placed in the unsorted bin.
+
+
+
+DOUBLE FREE NOTES:
+Freeing a chunk twice (double free) will make its fd point to itself.
+This is useful if you want to leak heap addresses.
+
+USE AFTER FREE IS DANGEROUS AND HERE IS WHY:
+Lets say we make a malloc call with size 0x300 and free it.
+Now lets make several more allocations and free every other one (to prevent chunks from consolidating).
+Now lets use our original malloc pointer to edit the chunk.
+We can now edit the freed chunk, which contains the other allocations.
+What now? We can edit those freed allocations to change their fd and bk pointers, and then once we unlink them, we have arbitrary write.\
+(You can also overwrite your own fd pointer because it is in the data section that is writable.)
+
+
+
+HOW TO BYPASS UNLINK CHECKS SAFELY:
+Set fake chunk fd and bk pointers to point to fake chunk, so fake chunk -> fd -> bk == fake chunk (and vice versa)
+
+
+
+IMPORTANT:
+It is sometimes useful to malloc another chunk after the one you want to exploit. This is useful so that the compromised chunk wont consolidate with the wilderness after being freed.
+
+
+
+THIS IS VERY IMPORTANT (UNSAFE UNLINK): heap chunk overflow
+We assume that we have an overflow in chunk0 so that we can freely change chunk1 metadata.
+We shrink the size of chunk0 (saved as 'previous_size' in chunk1) so that free will think that chunk0 starts where we placed our fake chunk.
+
+
+
+https://heap-exploitation.dhavalkapil.com/attacks/house_of_spirit.html
+House of Spirit exploit: overwrite chunk pointer
+Create fake chunk anywhere
+Somehow overwrite pointer of a real chunk to point to fake chunk
+Free pointer of the real chunk(which actually points to the fake chunk now)
+Wait for program to malloc the freed fake chunk
+The pointer can now point to anywhere in memory and can write to that place
+Profit??? (If the pointer points to the stack, u can overwrite eip by changing the data that is pointed to)
+
+
+
+UNSAFE UNLINK: heap chunk overflow
+so the basic idea is
+get control of a chunk
+make it so u forge a fake chunk in the data of that chunk
+set the bd and fd pointers to something of use
+and wait for the chunk after to be freed
+it will then notice that the fake chunk is free
+and will unlink that chunk
+giving u arbitrary write

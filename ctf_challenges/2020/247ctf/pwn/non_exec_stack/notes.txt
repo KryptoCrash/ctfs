@@ -1,0 +1,5 @@
+Plan:
+
+First pass (leak puts addr and ret to main)
+    gadget
+Second pass (call system)

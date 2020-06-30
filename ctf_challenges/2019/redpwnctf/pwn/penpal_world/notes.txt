@@ -1,0 +1,3 @@
+Things we need:
+malloc_hook addr
+a one_gadget

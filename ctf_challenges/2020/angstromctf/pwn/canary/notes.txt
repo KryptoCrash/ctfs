@@ -1,0 +1,6 @@
+NOTES:
+
+fmt str vuln on line 41
+
+plan is to use fmt str buffer to leak canary
+then simple buffer overflow to redirect code exec to flag

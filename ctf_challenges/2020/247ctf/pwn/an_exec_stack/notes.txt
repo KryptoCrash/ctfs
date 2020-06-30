@@ -1,0 +1,5 @@
+NOTES:
+
+Plan is to make a nop slide that leads up to shellcode to pop a shell, and then overwrite the return address to point somewhere into that buffer.
+
+New plan was to use a push esp, ret gadget to execute shell code placed after the return addresS. No need for nop, when you have rop.

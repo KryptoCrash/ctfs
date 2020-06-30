@@ -1,0 +1,5 @@
+If you don't know where the stack is, a rop gadget will.
+Something as simple as changing the return address to a rop gadget with intstructions: push esp, ret 
+will be able to execute anything you put after the return address.
+
+Check /2020/247ctf/pwn/an_exec_stack for more info.

@@ -1,0 +1,9 @@
+NOTES:
+
+This is a blind format string GOT overwrite challenge.
+
+The main goal is to pop a shell by overwriting the printf GOT entry with the system GOT entry.
+
+In the first pass, we bruteforce the stack pointer by using stack addresses on the stack + offsets to find where the value on the stack that is our input is equal to the address it points to.
+In the first pass, we leak the printf address.
+In the second pass, we write sy

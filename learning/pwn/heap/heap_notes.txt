@@ -1,6 +1,5 @@
 <TO BE POILISHED LATER>
 
-
 WRITING OVER THE TCACHE (VERY POWERFUL): UAF
 The vulnerability is a use-after-free. After double-freeing, you can read the chunk data to leak a heap address. 
 From this heap leak, you can compute the address of tcache and overwrite the forward pointer of the chunk so that you allocate a pointer pointing to the top of tcache. (This is my favorite trick, to date.)
@@ -17,7 +16,9 @@ Freeing a different chunk in the middle of a double free will bypaass double fre
 LEAKING LIBC:
 Bins (not tcache/fast) tend to have a libc address on them (for arena stuff).
 By mallocing these chunks and reading them, you can leak libc addresses.
-
+If you cannot get a non tcache bin, you can also try to leak libc pointers from the bss region.
+The bss region can be found if one can get past PIE. The main idea is to leak PIE and HEAP, then use the write over tcache technique to put a bss pointer on the tcache list.
+On the next allocation, the heap will now malloc a chunk inside the bss, where you can use a "show" function to leak pointers from libc.
 
 UNSORTED BIN ATTACK: overwrite the bk pointer of a freed unsorted chunk
 This attack can be used to modify the global_max_fast in the heap to make the larger chunks look like fast bins, so we can perform some fast bin attacks.

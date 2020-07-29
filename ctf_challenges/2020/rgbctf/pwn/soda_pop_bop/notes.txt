@@ -1,0 +1,3 @@
+Full security options enabled.
+
+Supplying negative values to drink input allows you to write a fake chunk.
